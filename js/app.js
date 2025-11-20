@@ -369,6 +369,121 @@ function renderConsultarRetro(){
   root.innerHTML = html;
 }
 
+/* ---------- Director: Listado proyectos asignados ---------- */
+function renderAsignadosDirector(){
+  const root = el('view-root');
+  DB = loadData();
+  const proys = DB.projects.filter(p => p.directorId === current.userId);
+  let html = `<div class="card"><h3>Proyectos asignados</h3>`;
+  if(proys.length===0) html += '<p class="small-muted">No tienes proyectos asignados.</p>';
+  else {
+    html += `<table class="table"><thead><tr><th>Título</th><th>Estudiante</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>`;
+    proys.forEach(p => {
+      const est = DB.users.find(u=>u.id===p.estudianteId)?.nombre || '-';
+      html += `<tr><td>${p.titulo}</td><td>${est}</td><td>${p.estado}</td><td><button class="btn small" onclick="directorOpenProject('${p.id}')">Abrir</button></td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  root.innerHTML = html;
+
+  window.directorOpenProject = (pid) => {
+    const entregs = DB.entregables.filter(e=>e.proyectoId===pid);
+    let content = `<div class="card"><h3>Entregables - Proyecto</h3>`;
+    if(entregs.length===0) content += '<p class="small-muted">No hay entregables.</p>';
+    else {
+      content += `<table class="table"><thead><tr><th>Archivo</th><th>Fase</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>`;
+      entregs.forEach(e => {
+        content += `<tr>
+          <td>${e.nombreArchivo}</td>
+          <td>${DB.fases.find(f=>f.id===e.faseId)?.nombre || '-'}</td>
+          <td>${e.estadoRevision}</td>
+          <td>
+            <div class="actions">
+              <button class="btn small" onclick="directorDownload('${e.id}')">Descargar</button>
+              <button class="btn small" onclick="directorComent('${e.id}')">Agregar comentario</button>
+              <button class="btn small" onclick="directorAprobar('${e.id}')">Aprobar</button>
+            </div>
+          </td>
+        </tr>`;
+      });
+      content += `</tbody></table>`;
+    }
+    content += `</div>`;
+    el('view-root').innerHTML = content;
+
+    window.directorDownload = (eid) => {
+      const ent = DB.entregables.find(x=>x.id===eid);
+      const a = document.createElement('a');
+      a.href = ent.contenidoBase64;
+      a.download = ent.nombreArchivo;
+      a.click();
+    };
+
+    window.directorComent = (eid) => {
+      const texto = prompt('Ingrese observación / retroalimentación:');
+      if(!texto) return;
+      DB = loadData();
+      DB.retro.push({ id: uid('r'), entregableId: eid, autorId: current.userId, autorRol: current.rol, comentario: texto, fecha: nowISO() });
+      // set estado to AjustesSolicitados
+      const ent = DB.entregables.find(x=>x.id===eid);
+      if(ent) ent.estadoRevision = 'Observado';
+      saveData(DB);
+      alert('Retroalimentación registrada.');
+      renderAsignadosDirector();
+    };
+
+    window.directorAprobar = (eid) => {
+      if(!confirm('¿Confirmar aprobación del entregable?')) return;
+      DB = loadData();
+      const ent = DB.entregables.find(x=>x.id===eid);
+      if(ent) ent.estadoRevision = 'Aprobado';
+      saveData(DB);
+      alert('Entregable aprobado.');
+      renderAsignadosDirector();
+    };
+  };
+}
+
+/* ---------- Director: Revisar entregable (otra vista) ---------- */
+function renderRevisarEntregable(){
+  // redirect to same list (alias)
+  renderAsignadosDirector();
+}
+
+/* ---------- Jurado: Evaluar proyectos ---------- */
+function renderEvaluarProyectos(){
+  const root = el('view-root');
+  DB = loadData();
+  // jurados see projects where they are assigned
+  const proys = DB.projects.filter(p => (p.jurados || []).includes(current.userId));
+  let html = `<div class="card"><h3>Evaluar proyectos</h3>`;
+  if(proys.length===0) html += '<p class="small-muted">No tienes proyectos asignados como jurado.</p>';
+  else {
+    html += `<table class="table"><thead><tr><th>Título</th><th>Estudiante</th><th>Acción</th></tr></thead><tbody>`;
+    proys.forEach(p => {
+      const est = DB.users.find(u=>u.id===p.estudianteId)?.nombre || '-';
+      html += `<tr><td>${p.titulo}</td><td>${est}</td><td><button class="btn small" onclick="juradoEvaluar('${p.id}')">Evaluar</button></td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  root.innerHTML = html;
+
+  window.juradoEvaluar = (pid) => {
+    const nota = prompt('Ingrese nota (0-5):');
+    if(nota === null) return;
+    const n = parseFloat(nota);
+    if(isNaN(n) || n<0 || n>5){ alert('Nota inválida'); return; }
+    const obs = prompt('Observaciones (opcional):') || '';
+    DB = loadData();
+    DB.evaluaciones.push({ id: uid('ev'), proyectoId: pid, juradoId: current.userId, nota: n, observaciones: obs, fecha: nowISO() });
+    saveData(DB);
+    alert('Evaluación registrada.');
+    renderEvaluarProyectos();
+  };
+}
+
 /* ---------- Init ---------- */
 (function init(){
   // Ensure DB exists
