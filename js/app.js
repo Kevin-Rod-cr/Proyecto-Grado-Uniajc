@@ -206,6 +206,169 @@ function renderHome(){
   `;
 }
 
+/* ---------- Estudiante: Registrar proyecto ---------- */
+function renderRegistrarProyecto(){
+  const root = el('view-root');
+  root.innerHTML = `
+    <div class="card">
+      <h3>Registrar nuevo proyecto</h3>
+      <label>Título</label><input id="p_titulo" type="text" />
+      <label>Descripción</label><textarea id="p_desc"></textarea>
+      <div class="row">
+        <button id="btn-save-proy" class="btn primary">Registrar</button>
+      </div>
+      <div id="msg-proy" class="small-muted"></div>
+    </div>
+  `;
+  el('btn-save-proy').addEventListener('click', ()=> {
+    const titulo = el('p_titulo').value.trim();
+    const desc = el('p_desc').value.trim();
+    if(!titulo){ alert('Ingrese título'); return; }
+    DB = loadData();
+    const project = {
+      id: uid('p'),
+      titulo, descripcion:desc, estado:'Registrado', fechaRegistro: nowISO(),
+      estudianteId: current.userId, directorId: null, jurados: []
+    };
+    DB.projects.push(project);
+    // crear fase inicial anteproyecto
+    DB.fases.push({ id: uid('f'), proyectoId: project.id, nombre:'Anteproyecto', fechaInicio: nowISO(), estado:'Pendiente' });
+    saveData(DB);
+    el('msg-proy').textContent = 'Proyecto registrado correctamente.';
+    el('p_titulo').value = ''; el('p_desc').value = '';
+  });
+}
+
+/* ---------- Estudiante: Mis proyectos ---------- */
+function renderMisProyectos(){
+  const root = el('view-root');
+  DB = loadData();
+  const proys = DB.projects.filter(p => p.estudianteId === current.userId);
+  let html = `<div class="card"><h3>Mis proyectos</h3>`;
+  if(proys.length === 0) html += '<p class="small-muted">No tienes proyectos registrados.</p>';
+  else {
+    html += `<table class="table"><thead><tr><th>Título</th><th>Estado</th><th>Director</th><th>Jurados</th><th>Acciones</th></tr></thead><tbody>`;
+    proys.forEach(p => {
+      const director = DB.users.find(u=>u.id===p.directorId)?.nombre || '-';
+      const jurados = (p.jurados||[]).map(id=>DB.users.find(u=>u.id===id)?.nombre || id).join(', ') || '-';
+      html += `<tr><td>${p.titulo}</td><td>${p.estado}</td><td>${director}</td><td>${jurados}</td><td>
+        <button class="btn small" data-id="${p.id}" onclick="viewProjectDetails('${p.id}')">Ver</button></td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  root.innerHTML = html;
+  // expose viewProjectDetails globally
+  window.viewProjectDetails = (id) => {
+    const p = DB.projects.find(x=>x.id===id);
+    const fases = DB.fases.filter(f=>f.proyectoId===id);
+    const entregables = DB.entregables.filter(e=>e.proyectoId===id);
+    let content = `<div class="card"><h3>${p.titulo}</h3><p>${p.descripcion}</p>`;
+    content += `<p><strong>Estado:</strong> ${p.estado}</p>`;
+    content += `<h4>Fases</h4><ul>`;
+    fases.forEach(f=> content += `<li>${f.nombre} — ${f.estado}</li>`);
+    content += `</ul>`;
+    content += `<h4>Entregables</h4>`;
+    if(entregables.length===0) content += '<p class="small-muted">No hay entregables</p>';
+    else {
+      content += `<table class="table"><thead><tr><th>Nombre</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>`;
+      entregables.forEach(e => {
+        content += `<tr><td>${e.nombreArchivo}</td><td>${new Date(e.fechaEntrega).toLocaleString()}</td><td>${e.estadoRevision}</td>
+          <td><button class="btn small" onclick="downloadEntregable('${e.id}')">Descargar</button></td></tr>`;
+      });
+      content += `</tbody></table>`;
+    }
+    content += `</div>`;
+    el('view-root').innerHTML = content;
+    window.downloadEntregable = (eid) => {
+      const ent = DB.entregables.find(x=>x.id===eid);
+      if(!ent){ alert('No encontrado'); return; }
+      const a = document.createElement('a');
+      a.href = ent.contenidoBase64;
+      a.download = ent.nombreArchivo;
+      a.click();
+    };
+  };
+}
+
+/* ---------- Estudiante: Cargar entregable ---------- */
+function renderCargarEntregable(){
+  const root = el('view-root');
+  DB = loadData();
+  const myProjects = DB.projects.filter(p => p.estudianteId === current.userId);
+  if(myProjects.length===0){
+    root.innerHTML = `<div class="card"><h3>Cargar entregable</h3><p class="small-muted">No tienes proyectos. Registra uno primero.</p></div>`;
+    return;
+  }
+  let options = '<option value="">-- Selecciona proyecto --</option>';
+  myProjects.forEach(p => options += `<option value="${p.id}">${p.titulo}</option>`);
+  root.innerHTML = `
+    <div class="card">
+      <h3>Cargar entregable</h3>
+      <label>Proyecto</label>
+      <select id="sel-proy">${options}</select>
+      <label>Fase</label>
+      <select id="sel-fase"><option value="">-- elige proyecto primero --</option></select>
+      <label>Archivo (PDF / DOCX / TXT)</label>
+      <input id="file-input" type="file" />
+      <div class="row">
+        <button id="btn-upload" class="btn primary">Subir entregable</button>
+      </div>
+      <div id="msg-upload" class="small-muted"></div>
+    </div>
+  `;
+  el('sel-proy').addEventListener('change', (e) => {
+    const pid = e.target.value;
+    const fases = DB.fases.filter(f=>f.proyectoId===pid);
+    let html = '<option value="">-- Selecciona fase --</option>';
+    fases.forEach(f => html += `<option value="${f.id}">${f.nombre}</option>`);
+    el('sel-fase').innerHTML = html;
+  });
+
+  el('btn-upload').addEventListener('click', ()=> {
+    const pid = el('sel-proy').value;
+    const fid = el('sel-fase').value;
+    const file = el('file-input').files[0];
+    if(!pid || !fid || !file){ alert('Complete todos los campos'); return; }
+
+    const reader = new FileReader();
+    reader.onload = function(evt){
+      const base64 = evt.target.result;
+      DB = loadData();
+      const ent = { id: uid('ent'), proyectoId: pid, faseId: fid, nombreArchivo: file.name, contenidoBase64: base64, fechaEntrega: nowISO(), estadoRevision: 'Pendiente' };
+      DB.entregables.push(ent);
+      saveData(DB);
+      el('msg-upload').textContent = 'Entregable subido correctamente.';
+      el('file-input').value = '';
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- Estudiante: Consultar retroalimentación ---------- */
+function renderConsultarRetro(){
+  const root = el('view-root');
+  DB = loadData();
+  const myEnts = DB.entregables.filter(e => {
+    const proj = DB.projects.find(p=>p.id===e.proyectoId);
+    return proj && proj.estudianteId === current.userId;
+  });
+  let html = `<div class="card"><h3>Retroalimentación</h3>`;
+  if(myEnts.length===0) html += '<p class="small-muted">No hay entregables.</p>';
+  else {
+    html += `<table class="table"><thead><tr><th>Archivo</th><th>Fase</th><th>Estado</th><th>Comentarios</th></tr></thead><tbody>`;
+    myEnts.forEach(e => {
+      const comentarios = DB.retro.filter(r=>r.entregableId===e.id);
+      const comHtml = comentarios.length ? comentarios.map(c=>`<div><strong>${DB.users.find(u=>u.id===c.autorId)?.nombre||c.autorId}:</strong> ${c.comentario} <small class="small-muted">(${new Date(c.fecha).toLocaleString()})</small></div>`).join('') : '<span class="small-muted">Sin comentarios</span>';
+      const fase = DB.fases.find(f=>f.id===e.faseId)?.nombre || '-';
+      html += `<tr><td>${e.nombreArchivo}</td><td>${fase}</td><td>${e.estadoRevision}</td><td>${comHtml}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  root.innerHTML = html;
+}
+
 /* ---------- Init ---------- */
 (function init(){
   // Ensure DB exists
