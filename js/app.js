@@ -484,6 +484,126 @@ function renderEvaluarProyectos(){
   };
 }
 
+/* ---------- Coordinación: Gestión de proyectos (asignar) ---------- */
+function renderGestionCoordinacion(){
+  DB = loadData();
+  const root = el('view-root');
+  const proys = DB.projects;
+  const directors = DB.users.filter(u=>u.rol==='director');
+  const jurados = DB.users.filter(u=>u.rol==='jurado');
+
+  let html = `<div class="card"><h3>Gestionar proyectos</h3>`;
+  if(proys.length===0) html += '<p class="small-muted">No hay proyectos registrados.</p>';
+  else {
+    html += `<table class="table"><thead><tr><th>Título</th><th>Estudiante</th><th>Director</th><th>Jurados</th><th>Acciones</th></tr></thead><tbody>`;
+    proys.forEach(p => {
+      const est = DB.users.find(u=>u.id===p.estudianteId)?.nombre || '-';
+      const dirSel = `<select data-pid="${p.id}" class="sel-dir"><option value="">-- Sin director --</option>` + directors.map(d => `<option value="${d.id}" ${p.directorId===d.id?'selected':''}>${d.nombre}</option>`).join('') + '</select>';
+      const jurSel = `<select data-pid="${p.id}" class="sel-jur" multiple size="3">` + jurados.map(j => `<option value="${j.id}" ${(p.jurados||[]).includes(j.id)?'selected':''}>${j.nombre}</option>`).join('') + '</select>';
+      html += `<tr><td>${p.titulo}</td><td>${est}</td><td>${dirSel}</td><td>${jurSel}</td><td><button class="btn small" onclick="saveAssign('${p.id}')">Guardar</button></td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+  html += `</div>`;
+  root.innerHTML = html;
+
+  window.saveAssign = (pid) => {
+    const selDir = document.querySelector(`select.sel-dir[data-pid="${pid}"]`);
+    const selJur = document.querySelector(`select.sel-jur[data-pid="${pid}"]`);
+    DB = loadData();
+    const proj = DB.projects.find(p=>p.id===pid);
+    if(proj){
+      proj.directorId = selDir.value || null;
+      proj.jurados = Array.from(selJur.selectedOptions).map(o=>o.value);
+      saveData(DB);
+      alert('Asignaciones actualizadas.');
+      renderGestionCoordinacion();
+    }
+  };
+}
+
+/* ---------- Coordinación: Programar sustentación ---------- */
+function renderProgramarSustentacion(){
+  DB = loadData();
+  const root = el('view-root');
+  const proys = DB.projects;
+  let options = '<option value="">-- Selecciona proyecto --</option>';
+  proys.forEach(p => options += `<option value="${p.id}">${p.titulo}</option>`);
+  root.innerHTML = `<div class="card"><h3>Programar sustentación</h3>
+    <label>Proyecto</label><select id="sel-proy-sust">${options}</select>
+    <label>Fecha</label><input id="inp-fecha" type="date" />
+    <label>Hora</label><input id="inp-hora" type="time" />
+    <label>Lugar</label><input id="inp-lugar" type="text" />
+    <div class="row"><button id="btn-program" class="btn primary">Programar</button></div>
+    <div id="msg-prog" class="small-muted"></div>
+  </div>`;
+  el('btn-program').addEventListener('click', ()=> {
+    const pid = el('sel-proy-sust').value;
+    const fecha = el('inp-fecha').value;
+    const hora = el('inp-hora').value;
+    const lugar = el('inp-lugar').value.trim();
+    if(!pid || !fecha || !hora || !lugar){ alert('Complete todos los campos'); return; }
+    DB = loadData();
+    DB.sustentaciones.push({ id: uid('s'), proyectoId: pid, fecha, hora, lugar, estado:'Programada' });
+    saveData(DB);
+    el('msg-prog').textContent = 'Sustentación programada.';
+    el('inp-fecha').value=''; el('inp-hora').value=''; el('inp-lugar').value='';
+  });
+}
+
+/* ---------- Coordinación: Generar acta ---------- */
+function renderGenerarActa(){
+  DB = loadData();
+  const proys = DB.projects.filter(p => {
+    // only projects with at least one evaluation
+    return DB.evaluaciones.some(ev=>ev.proyectoId===p.id);
+  });
+  const root = el('view-root');
+  if(proys.length===0){
+    root.innerHTML = `<div class="card"><h3>Generar acta</h3><p class="small-muted">No hay proyectos con evaluaciones para generar acta.</p></div>`;
+    return;
+  }
+  let options = '<option value="">-- Selecciona proyecto --</option>';
+  proys.forEach(p => options += `<option value="${p.id}">${p.titulo}</option>`);
+  root.innerHTML = `<div class="card"><h3>Generar acta</h3>
+    <label>Proyecto</label><select id="sel-acta">${options}</select>
+    <div class="row"><button id="btn-gen-acta" class="btn primary">Generar acta (imprimible)</button></div>
+    <div id="msg-acta" class="small-muted"></div>
+  </div>`;
+  el('btn-gen-acta').addEventListener('click', ()=> {
+    const pid = el('sel-acta').value;
+    if(!pid){ alert('Selecciona proyecto'); return; }
+    DB = loadData();
+    const evaluaciones = DB.evaluaciones.filter(ev => ev.proyectoId === pid);
+    const notas = evaluaciones.map(ev => ev.nota);
+    const promedio = notas.reduce((a,b)=>a+b,0)/notas.length;
+    const acta = { id: uid('acta'), proyectoId: pid, fechaEmision: nowISO(), calificacionFinal: Number(promedio.toFixed(2)), observaciones: evaluaciones.map(e=>e.observaciones).filter(s=>s).join(' / ') };
+    DB.actas.push(acta);
+    saveData(DB);
+    // render printable acta
+    const proyecto = DB.projects.find(p=>p.id===pid);
+    const estudiante = DB.users.find(u=>u.id===proyecto.estudianteId);
+    const jurados = (proyecto.jurados||[]).map(jid => DB.users.find(u=>u.id===jid)?.nombre || jid).join(', ');
+    const html = `
+      <div style="padding:20px;font-family:Arial;color:#0b1720">
+        <h2>Acta de Calificación</h2>
+        <p><strong>Proyecto:</strong> ${proyecto.titulo}</p>
+        <p><strong>Estudiante:</strong> ${estudiante?.nombre || '-'}</p>
+        <p><strong>Jurados:</strong> ${jurados}</p>
+        <p><strong>Calificación final:</strong> ${acta.calificacionFinal.toFixed(2)}</p>
+        <p><strong>Observaciones:</strong> ${acta.observaciones || '-'}</p>
+        <p><small>Fecha emisión: ${new Date(acta.fechaEmision).toLocaleString()}</small></p>
+      </div>
+    `;
+    // open print window
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    w.print();
+    el('msg-acta').textContent = 'Acta generada e impresión abierta.';
+  });
+}
+
 /* ---------- Init ---------- */
 (function init(){
   // Ensure DB exists
