@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>UNIAJC - Gestión Proyectos de Grado (Demo)</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Login / Role selection -->
+    <main id="login-screen" class="card center">
+      <h1>UNIAJC - Proyectos de Grado (Demo)</h1>
+      <p>Simulación local (sin servidor). Elija rol y acceda.</p>
+
+      <label>Rol</label>
+      <select id="input-role">
+        <option value="estudiante">Estudiante</option>
+        <option value="director">Director</option>
+        <option value="jurado">Jurado</option>
+        <option value="coordinacion">Coordinación Académica</option>
+      </select>
+
+      <label id="lbl-usuario">Nombre</label>
+      <input id="input-nombre" type="text" placeholder="Tu nombre" />
+
+      <label id="lbl-codigo" style="display:none">Código estudiante</label>
+      <input id="input-codigo" type="text" placeholder="Código (si eres estudiante)" style="display:none" />
+
+      <div class="row">
+        <button id="btn-login" class="btn primary">Entrar</button>
+        <button id="btn-seed" class="btn ghost">Cargar datos de ejemplo</button>
+      </div>
+      <small class="muted">Los datos quedan guardados en <code>localStorage</code> del navegador.</small>
+    </main>
+
+    <!-- Main app layout -->
+    <div id="main-app" style="display:none">
+      <header class="topbar">
+        <h2 id="app-title">UNIAJC - Gestión Proyectos</h2>
+        <div class="meta">
+          <span id="user-role"></span> · <span id="user-name"></span>
+          <button id="btn-logout" class="btn small">Cerrar sesión</button>
+        </div>
+      </header>
+
+      <div class="layout">
+        <nav class="sidebar">
+          <ul id="menu-list"></ul>
+        </nav>
+
+        <section class="content">
+          <div id="view-root"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
